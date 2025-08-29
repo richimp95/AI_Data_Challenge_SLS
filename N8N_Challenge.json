@@ -1,0 +1,509 @@
+{
+  "name": "Challenge",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "https://drive.google.com/file/d/1RXj_3txgmyX2Wyt9ZwM7l4axfi5A6EC-/view",
+          "mode": "url"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        224,
+        -16
+      ],
+      "id": "af896395-ce9b-4259-8cea-07559dc4794a",
+      "name": "Download file",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "audYXC6wxF6YlQ1p",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "bd5d920d-d272-45bd-85b8-16bb1c352b93",
+              "name": "=name_folder",
+              "value": "=external_files/ads_spend_{{$now.format(\"yyyy_LL_dd\")}}.csv",
+              "type": "string"
+            },
+            {
+              "id": "ea1833a2-8e86-4ea5-b9ec-9c5c967d21a6",
+              "name": "gcs_uri",
+              "value": "=gs://challenge-ads-etl-sl-us/external_files/ads_spend_{{$now.format(\"yyyy_LL_dd\")}}.csv",
+              "type": "string"
+            },
+            {
+              "id": "22fda748-f1ef-442e-a8c7-f7b1a5856058",
+              "name": "external_folder",
+              "value": "external_files/",
+              "type": "string"
+            },
+            {
+              "id": "ab4f36e8-1a86-407e-9716-ae2ff0bb858a",
+              "name": "name",
+              "value": "=ads_spend_{{$now.format(\"yyyy_LL_dd\")}}.csv",
+              "type": "string"
+            },
+            {
+              "id": "32cb5a1f-ab12-4f4d-9c32-8c28105e929d",
+              "name": "proyecto",
+              "value": "esh-home-assistant-52875",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        32,
+        -16
+      ],
+      "id": "3d73da0c-7924-458d-aa32-9256675311fa",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "resource": "object",
+        "operation": "create",
+        "bucketName": "challenge-ads-etl-sl-us",
+        "objectName": "={{ $json.name_folder }}",
+        "createData": {},
+        "createQuery": {},
+        "encryptionHeaders": {},
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-base.googleCloudStorage",
+      "typeVersion": 1,
+      "position": [
+        416,
+        -16
+      ],
+      "id": "37cd29ab-493e-45c1-9592-6a83bb11cc03",
+      "name": "Create an object",
+      "credentials": {
+        "googleCloudStorageOAuth2Api": {
+          "id": "1fV6QWZy4InTyqwU",
+          "name": "Google Cloud Storage account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "projectId": {
+          "__rl": true,
+          "value": "esh-home-assistant-52875",
+          "mode": "list",
+          "cachedResultName": "esh-home-assistant",
+          "cachedResultUrl": "https://console.cloud.google.com/bigquery?project=esh-home-assistant-52875"
+        },
+        "sqlQuery": "-- Carga el CSV subido a GCS en la tabla staging.\n-- OJO: el CSV solo trae las columnas originales (sin metadatos).\n-- Las columnas load_date/source_file_name quedarán NULL y las llenamos en el siguiente paso.\n\nCREATE OR REPLACE EXTERNAL TABLE  `{{ $(\"Edit Fields\").item.json.proyecto }}.agency_demo.ads_spend_staging`\n  OPTIONS (\n  format = 'CSV',\n  uris = ['{{ $(\"Edit Fields\").item.json.gcs_uri }}'],\n  skip_leading_rows = 1,\n  field_delimiter = ','\n);\n\nSELECT COUNT(1) FROM `{{ $(\"Edit Fields\").item.json.proyecto }}.agency_demo.ads_spend_staging`",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        848,
+        -16
+      ],
+      "id": "0a02afce-3670-44b4-b847-8ed34e49d5ad",
+      "name": "CREATE STAGING",
+      "credentials": {
+        "googleApi": {
+          "id": "LYaQM0PwsLVPNyWd",
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "projectId": {
+          "__rl": true,
+          "value": "esh-home-assistant-52875",
+          "mode": "list",
+          "cachedResultName": "esh-home-assistant",
+          "cachedResultUrl": "https://console.cloud.google.com/bigquery?project=esh-home-assistant-52875"
+        },
+        "sqlQuery": "CREATE SCHEMA IF NOT EXISTS `{{ $(\"Edit Fields\").item.json.proyecto }}.agency_demo`;\n\nCREATE TABLE IF NOT EXISTS `{{ $(\"Edit Fields\").item.json.proyecto }}.agency_demo.ads_spend_raw` (\n  date DATE,\n  platform STRING,\n  account STRING,\n  campaign STRING,\n  country STRING,\n  device STRING,\n  spend FLOAT64,\n  clicks INT64,\n  impressions INT64,\n  conversions INT64,\n  load_date DATE,\n  source_file_name STRING\n)\nPARTITION BY date\nCLUSTER BY platform, account, country, device\n  ;\n\nALTER TABLE `esh-home-assistant-52875.agency_demo.ads_spend_raw`\nSET OPTIONS (partition_expiration_days = NULL); \n\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        624,
+        -16
+      ],
+      "id": "fd8f1600-58c7-4132-bccf-7d6dd39a1da4",
+      "name": "CREATE RAW",
+      "credentials": {
+        "googleApi": {
+          "id": "LYaQM0PwsLVPNyWd",
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "projectId": {
+          "__rl": true,
+          "value": "esh-home-assistant-52875",
+          "mode": "list",
+          "cachedResultName": "esh-home-assistant",
+          "cachedResultUrl": "https://console.cloud.google.com/bigquery?project=esh-home-assistant-52875"
+        },
+        "sqlQuery": "DELETE FROM `{{ $(\"Edit Fields\").item.json.proyecto }}.agency_demo.ads_spend_raw` \n    WHERE source_file_name = '{{$('Edit Fields').item.json.name}}';\n\nINSERT INTO `{{ $(\"Edit Fields\").item.json.proyecto }}.agency_demo.ads_spend_raw`\nSELECT\n  CAST(date AS DATE) AS date, \n  platform, \n  account, \n  campaign, \n  country, \n  device,\n  CAST(spend AS FLOAT64) AS spend, \n  CAST(clicks AS INT64) AS clicks, \n  CAST(impressions AS INT64) AS impressions, \n  CAST(conversions AS INT64) AS conversions, \n  CURRENT_DATE() as load_date,\n  '{{$('Edit Fields').item.json.name}}' as source_file_name\nFROM `{{ $(\"Edit Fields\").item.json.proyecto }}.agency_demo.ads_spend_staging`\n;\n\nSELECT COUNT(1) FROM `{{ $(\"Edit Fields\").item.json.proyecto }}.agency_demo.ads_spend_raw`\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        1056,
+        -16
+      ],
+      "id": "e6aa0efd-8ab1-4742-842b-35f36238295f",
+      "name": "INSERT STAGE INTO RAW",
+      "credentials": {
+        "googleApi": {
+          "id": "LYaQM0PwsLVPNyWd",
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "path": "/challenge/metrics",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -176,
+        272
+      ],
+      "id": "ce2790f7-3e36-4c3a-a2bd-774ec16abf71",
+      "name": "Webhook",
+      "webhookId": "61bbadac-714b-4e91-8ac3-81cb4aea53de"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "projectId": {
+          "__rl": true,
+          "value": "esh-home-assistant-52875",
+          "mode": "list",
+          "cachedResultName": "esh-home-assistant",
+          "cachedResultUrl": "https://console.cloud.google.com/bigquery?project=esh-home-assistant-52875"
+        },
+        "sqlQuery": "-- 1.1 Agregación diaria base (1 fila por fecha)\nCREATE OR REPLACE TABLE `{{ $('Download file').item.json.proyecto }}.agency_demo.daily_agg`\nAS\nSELECT\n  date,\n  SUM(spend)        AS spend,\n  SUM(conversions)  AS conv,\n  SUM(conversions) * 100.0 AS revenue\nFROM `{{ $('Download file').item.json.proyecto }}.agency_demo.ads_spend_raw`\nGROUP BY date;\n\n-- 1.2 KPIs diarios (CAC/ROAS por día)\nCREATE OR REPLACE TABLE `{{ $('Download file').item.json.proyecto }}.agency_demo.daily_kpis`\nAS\nSELECT\n  date,\n  spend,\n  conv,\n  revenue,\n  SAFE_DIVIDE(spend, NULLIF(conv,0))  AS CAC_daily,\n  SAFE_DIVIDE(revenue, NULLIF(spend,0)) AS ROAS_daily\nFROM `{{ $('Download file').item.json.proyecto }}.agency_demo.daily_agg`;\n\n\nSELECT COUNT(*) FROM `{{ $('Download file').item.json.proyecto }}.agency_demo.daily_kpis`",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        1264,
+        -16
+      ],
+      "id": "86822433-22be-4242-96ce-f4873bde4108",
+      "name": "Create KPI Daily",
+      "credentials": {
+        "googleApi": {
+          "id": "LYaQM0PwsLVPNyWd",
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "projectId": {
+          "__rl": true,
+          "value": "esh-home-assistant-52875",
+          "mode": "list",
+          "cachedResultName": "esh-home-assistant",
+          "cachedResultUrl": "https://console.cloud.google.com/bigquery?project=esh-home-assistant-52875"
+        },
+        "sqlQuery": "CREATE OR REPLACE TABLE `{{ $('Edit Fields').item.json.proyecto }}.agency_demo.rolling_kpis_last30_vs_prior30_by_day`\nAS\nWITH d AS (\n  SELECT\n    date AS as_of,\n    spend,\n    conv,\n    revenue\n  FROM `{{ $('Edit Fields').item.json.proyecto }}.agency_demo.daily_agg`\n),\nw AS (\n  SELECT\n    as_of,\n\n    -- últimos 30 días observados (incluye as_of)\n    SUM(spend)    OVER (ORDER BY as_of ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS spend_last,\n    SUM(conv)     OVER (ORDER BY as_of ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS conv_last,\n    SUM(revenue)  OVER (ORDER BY as_of ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS revenue_last,\n\n    -- 30 observados previos al bloque anterior\n    SUM(spend)    OVER (ORDER BY as_of ROWS BETWEEN 59 PRECEDING AND 30 PRECEDING) AS spend_prior,\n    SUM(conv)     OVER (ORDER BY as_of ROWS BETWEEN 59 PRECEDING AND 30 PRECEDING) AS conv_prior,\n    SUM(revenue)  OVER (ORDER BY as_of ROWS BETWEEN 59 PRECEDING AND 30 PRECEDING) AS revenue_prior\n  FROM d\n)\nSELECT\n  as_of,\n  30 AS n_observed,\n\n  -- Totales ventana actual\n  spend_last, conv_last, revenue_last,\n  SAFE_DIVIDE(spend_last, NULLIF(conv_last,0))  AS CAC_last,\n  SAFE_DIVIDE(revenue_last, NULLIF(spend_last,0)) AS ROAS_last,\n\n  -- Totales ventana previa\n  spend_prior, conv_prior, revenue_prior,\n  SAFE_DIVIDE(spend_prior, NULLIF(conv_prior,0))  AS CAC_prior,\n  SAFE_DIVIDE(revenue_prior, NULLIF(spend_prior,0)) AS ROAS_prior,\n\n  -- Deltas\n  (SAFE_DIVIDE(spend_last, NULLIF(conv_last,0)) - SAFE_DIVIDE(spend_prior, NULLIF(conv_prior,0))) AS CAC_delta_abs,\n  SAFE_DIVIDE(\n    SAFE_DIVIDE(spend_last, NULLIF(conv_last,0)) - SAFE_DIVIDE(spend_prior, NULLIF(conv_prior,0)),\n    SAFE_DIVIDE(spend_prior, NULLIF(conv_prior,0))\n  ) AS CAC_delta_pct,\n\n  (SAFE_DIVIDE(revenue_last, NULLIF(spend_last,0)) - SAFE_DIVIDE(revenue_prior, NULLIF(spend_prior,0))) AS ROAS_delta_abs,\n  SAFE_DIVIDE(\n    SAFE_DIVIDE(revenue_last, NULLIF(spend_last,0)) - SAFE_DIVIDE(revenue_prior, NULLIF(spend_prior,0)),\n    SAFE_DIVIDE(revenue_prior, NULLIF(spend_prior,0))\n  ) AS ROAS_delta_pct\nFROM w;\n\nSELECT COUNT(*) FROM `{{ $('Edit Fields').item.json.proyecto }}.agency_demo.rolling_kpis_last30_vs_prior30_by_day`",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        1472,
+        -16
+      ],
+      "id": "cf2cb375-5c19-4277-98bf-aec90f603125",
+      "name": "30 Day KPI",
+      "credentials": {
+        "googleApi": {
+          "id": "LYaQM0PwsLVPNyWd",
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "responseKey": "={{$json}}"
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        480,
+        272
+      ],
+      "id": "ed2121a5-b933-4506-ad3c-2124ff890b1c",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "projectId": {
+          "__rl": true,
+          "value": "esh-home-assistant-52875",
+          "mode": "list",
+          "cachedResultName": "esh-home-assistant",
+          "cachedResultUrl": "https://console.cloud.google.com/bigquery?project=esh-home-assistant-52875"
+        },
+        "sqlQuery": "SELECT * FROM {{ $json.proyecto }}.agency_demo.rolling_kpis_last30_vs_prior30_by_day\nWHERE as_of BETWEEN '{{ $('Webhook').item.json.query.start }}' AND '{{ $('Webhook').item.json.query.end }}'",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        256,
+        272
+      ],
+      "id": "aa501875-0654-42db-ba3a-5f7bdc553fe3",
+      "name": "Response",
+      "credentials": {
+        "googleApi": {
+          "id": "LYaQM0PwsLVPNyWd",
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "bd5d920d-d272-45bd-85b8-16bb1c352b93",
+              "name": "=name_folder",
+              "value": "=external_files/ads_spend_{{$now.format(\"yyyy_LL_dd\")}}.csv",
+              "type": "string"
+            },
+            {
+              "id": "ea1833a2-8e86-4ea5-b9ec-9c5c967d21a6",
+              "name": "gcs_uri",
+              "value": "=gs://challenge-ads-etl-sl-us/external_files/ads_spend_{{$now.format(\"yyyy_LL_dd\")}}.csv",
+              "type": "string"
+            },
+            {
+              "id": "22fda748-f1ef-442e-a8c7-f7b1a5856058",
+              "name": "external_folder",
+              "value": "external_files/",
+              "type": "string"
+            },
+            {
+              "id": "ab4f36e8-1a86-407e-9716-ae2ff0bb858a",
+              "name": "name",
+              "value": "=ads_spend_{{$now.format(\"yyyy_LL_dd\")}}.csv",
+              "type": "string"
+            },
+            {
+              "id": "32cb5a1f-ab12-4f4d-9c32-8c28105e929d",
+              "name": "proyecto",
+              "value": "esh-home-assistant-52875",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        48,
+        272
+      ],
+      "id": "fb8d7aad-97f1-4e03-84fb-6f3dd777040a",
+      "name": "Edit Fields1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -160,
+        -16
+      ],
+      "id": "d5209838-a84f-4eda-baf4-993f3aacffc2",
+      "name": "When clicking ‘Execute workflow’"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Download file": {
+      "main": [
+        [
+          {
+            "node": "Create an object",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Download file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create an object": {
+      "main": [
+        [
+          {
+            "node": "CREATE RAW",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CREATE RAW": {
+      "main": [
+        [
+          {
+            "node": "CREATE STAGING",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CREATE STAGING": {
+      "main": [
+        [
+          {
+            "node": "INSERT STAGE INTO RAW",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "INSERT STAGE INTO RAW": {
+      "main": [
+        [
+          {
+            "node": "Create KPI Daily",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create KPI Daily": {
+      "main": [
+        [
+          {
+            "node": "30 Day KPI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "30 Day KPI": {
+      "main": [
+        []
+      ]
+    },
+    "Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        [
+          {
+            "node": "Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "e253fa3a-8442-4ad0-8e38-5ac9b92e3481",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "8323558451f275366da9c8acf872384fc659b7f88326dcc6cee3d66b56d3c083"
+  },
+  "id": "giZ43l8Ft2TfkSBm",
+  "tags": []
+}
